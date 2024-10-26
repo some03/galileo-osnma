@@ -61,8 +61,17 @@ macro_rules! ced_and_status_range {
 
 // 範囲を定義
 ced_and_status_range!(
-    RANGE1, 10, 20;
-    RANGE2, 30, 40;
+    TOE, 11, 24;
+    MO, 25, 56;
+    E, 57, 88;
+    AQRTA,89,120;
+
+    OMEGAO,131,162;
+    IO,163,194;
+    OMEGA,195,226;
+    IDOT,227,240;
+
+    OMEGADOT,251,274;
 );
 //---------------------------------------------------------
 fn main() -> Result<()> {
