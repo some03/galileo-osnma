@@ -43,7 +43,15 @@ fn load_pubkey_p521(hex: &str, pkid: u8) -> Result<PublicKey<Validated>> {
     let pubkey = p521::ecdsa::VerifyingKey::from_sec1_bytes(&pubkey)?;
     Ok(PublicKey::from_p521(pubkey, pkid).force_valid())
 }
-
+//add function for display CED and status data------------
+fn extract_bits_range(data_bytes: &[u8], start: usize, end: usize) -> Vec<u8> {
+    (start..=end).map(|bit_index| {
+        let byte_index = bit_index / 8;
+        let bit_in_byte = bit_index % 8;
+        (data_bytes[byte_index] >> bit_in_byte) & 1
+    }).collect()
+}
+//---------------------------------------------------------
 fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
@@ -191,10 +199,11 @@ fn main() -> Result<()> {
                     {
                         log::info!(
                             "new CED and status for {} authenticated \
-                                    (authbits = {}, GST = {:?})",
+                                    (authbits = {}, GST = {:?},data = {:?})",
                             svn,
                             data.authbits(),
-                            data.gst()
+                            data.gst(),
+                            data_bytes
                         );
                         ced_and_status_data[idx] = Some(data_bytes);
                     }
