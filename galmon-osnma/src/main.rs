@@ -51,6 +51,19 @@ fn extract_bits_range(data_bytes: &[u8], start: usize, end: usize) -> Vec<u8> {
         (data_bytes[byte_index] >> bit_in_byte) & 1
     }).collect()
 }
+macro_rules! ced_and_status_range {
+    ($($name:ident, $start:expr, $end:expr);* $(;)?) => {
+        $(
+            const $name: (usize, usize) = ($start, $end);
+        )*
+    };
+}
+
+// 範囲を定義
+ced_and_status_range!(
+    RANGE1, 10, 20;
+    RANGE2, 30, 40;
+);
 //---------------------------------------------------------
 fn main() -> Result<()> {
     env_logger::init();
