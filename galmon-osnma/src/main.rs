@@ -7,7 +7,7 @@ use galileo_osnma::{
     Gst, InavBand, Osnma, PublicKey, Svn, Validated, Wn,
 };
 use spki::DecodePublicKey;
-use std::io::Read;
+use std::{collections::HashMap, io::Read};
 
 /// Process OSNMA data reading Galmon protobuf from stdin
 #[derive(Parser, Debug)]
@@ -44,13 +44,65 @@ fn load_pubkey_p521(hex: &str, pkid: u8) -> Result<PublicKey<Validated>> {
     Ok(PublicKey::from_p521(pubkey, pkid).force_valid())
 }
 //add function for display CED and status data------------
-fn extract_bits_range(data_bytes: &[u8], start: usize, end: usize) -> Vec<u8> {
-    (start..=end).map(|bit_index| {
-        let byte_index = bit_index / 8;
-        let bit_in_byte = bit_index % 8;
-        (data_bytes[byte_index] >> bit_in_byte) & 1
-    }).collect()
+
+fn extract_bits_range(data_bytes: &[u8], start: usize, end: usize) -> u32 {
+    let mut value: u32 = 0;
+    for i in start..=end {
+        let byte_index = i / 8;
+        let bit_index = i % 8;
+        let bit = (data_bytes[byte_index] >> (7 - bit_index)) & 1;
+        value = (value << 1) | bit as u32;
+    }
+    value
 }
+fn extract_all_bits(data_bytes: &[u8]) -> HashMap<&'static str, u32> {
+    let mut map = HashMap::new();
+    map.insert("T0E", extract_bits_range(data_bytes, 11, 24));
+    map.insert("M0", extract_bits_range(data_bytes, 25, 56));
+    map.insert("E", extract_bits_range(data_bytes, 57, 88));
+    map.insert("AQRTA", extract_bits_range(data_bytes, 89, 120));
+    map.insert("OMEGA0", extract_bits_range(data_bytes, 131, 162));
+    map.insert("I0", extract_bits_range(data_bytes, 163, 194));
+    map.insert("OMEGA", extract_bits_range(data_bytes, 195, 226));
+    map.insert("IDOT", extract_bits_range(data_bytes, 227, 240));
+    map.insert("OMEGADOT", extract_bits_range(data_bytes, 251, 274));
+    map.insert("DELTAN", extract_bits_range(data_bytes, 275, 290));
+    map.insert("CUC", extract_bits_range(data_bytes, 291, 306));
+    map.insert("CUS", extract_bits_range(data_bytes, 307, 322));
+    map.insert("CRC", extract_bits_range(data_bytes, 323, 338));
+    map.insert("CRS", extract_bits_range(data_bytes, 339, 354));
+    map.insert("CIC", extract_bits_range(data_bytes, 379, 394));
+    map.insert("CIS", extract_bits_range(data_bytes, 395, 410));
+    map.insert("T0C", extract_bits_range(data_bytes, 411, 424));
+    map.insert("AF0", extract_bits_range(data_bytes, 425, 455));
+    map.insert("AF1", extract_bits_range(data_bytes, 456, 476));
+    map.insert("AF2", extract_bits_range(data_bytes, 477, 482));
+    map.insert("AI0", extract_bits_range(data_bytes, 483, 493));
+    map.insert("AI1", extract_bits_range(data_bytes, 494, 504));
+    map.insert("AI2", extract_bits_range(data_bytes, 505, 518));
+    map.insert("REGION1", extract_bits_range(data_bytes, 519, 519));
+    map.insert("REGION2", extract_bits_range(data_bytes, 520, 520));
+    map.insert("REGION3", extract_bits_range(data_bytes, 521, 521));
+    map.insert("REGION4", extract_bits_range(data_bytes, 522, 522));
+    map.insert("REGION5", extract_bits_range(data_bytes, 523, 523));
+    map.insert("BGDA", extract_bits_range(data_bytes, 524, 533));
+    map.insert("BGDB", extract_bits_range(data_bytes, 534, 543));
+    map.insert("E5BHS", extract_bits_range(data_bytes, 544, 545));
+    map.insert("E1BHS", extract_bits_range(data_bytes, 546, 547));
+    map.insert("E5BDVS", extract_bits_range(data_bytes, 548, 548));
+    map.insert("E1BDVS", extract_bits_range(data_bytes, 549, 549));
+    map
+}
+
+fn hashmap_to_string(map: &HashMap<&str, u32>) -> String {
+    map.iter()
+        .map(|(key, value)| format!("{}: {}", key, value))
+        .collect::<Vec<String>>()
+        .join(", ")
+}
+
+/* 
+
 macro_rules! ced_and_status_range {
     ($($name:ident, $start:expr, $end:expr);* $(;)?) => {
         $(
@@ -58,8 +110,6 @@ macro_rules! ced_and_status_range {
         )*
     };
 }
-
-// 範囲を定義
 ced_and_status_range!(
     T0E, 11, 24;
     M0, 25, 56;
@@ -100,6 +150,7 @@ ced_and_status_range!(
     E5BDVS,548,548;
     E1BDVS,549,549;
 );
+*/
 //---------------------------------------------------------
 fn main() -> Result<()> {
     env_logger::init();
@@ -246,13 +297,18 @@ fn main() -> Result<()> {
                         .map(|d| d == data_bytes)
                         .unwrap_or(false)
                     {
+                        //Extract CED and STATUS data from the data bytes----------------
+                        let extracted_bits = extract_all_bits(&data_bytes);
+                        let extracted_bits_str = hashmap_to_string(&extracted_bits);
+                        //-----------------------------------------------------------------
+                        
                         log::info!(
                             "new CED and status for {} authenticated \
-                                    (authbits = {}, GST = {:?},data = {:?})",
+                                    (authbits = {}, GST = {:?},data = {{{}}})",
                             svn,
                             data.authbits(),
                             data.gst(),
-                            data_bytes
+                            extracted_bits_str
                         );
                         ced_and_status_data[idx] = Some(data_bytes);
                     }
