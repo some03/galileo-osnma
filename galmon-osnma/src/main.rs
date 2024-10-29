@@ -1,13 +1,15 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use galileo_osnma::{
-    galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport},
+    galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport,navmon::nav_mon_message::ObserverPosition},
     storage::FullStorage,
     types::{BitSlice, NUM_SVNS},
     Gst, InavBand, Osnma, PublicKey, Svn, Validated, Wn,
 };
 use spki::DecodePublicKey;
 use std::{collections::HashMap, io::Read};
+use std::f64::consts::PI;
+use colored::*;
 
 /// Process OSNMA data reading Galmon protobuf from stdin
 #[derive(Parser, Debug)]
@@ -43,115 +45,42 @@ fn load_pubkey_p521(hex: &str, pkid: u8) -> Result<PublicKey<Validated>> {
     let pubkey = p521::ecdsa::VerifyingKey::from_sec1_bytes(&pubkey)?;
     Ok(PublicKey::from_p521(pubkey, pkid).force_valid())
 }
-//add function for display CED and status data------------
 
-fn extract_bits_range(data_bytes: &[u8], start: usize, end: usize) -> u32 {
-    let mut value: u32 = 0;
-    for i in start..=end {
-        let byte_index = i / 8;
-        let bit_index = i % 8;
-        let bit = (data_bytes[byte_index] >> (7 - bit_index)) & 1;
-        value = (value << 1) | bit as u32;
+//------------------------------eceftowgs84--------------------------------
+fn  ecef_to_wgs84(x:f64,y:f64,z:f64) -> (f64,f64,f64) {
+    const A: f64 = 6378137.0; // WGS84の長半径 (m)
+    const E2: f64 = 0.00669437999014; // 第一離心率の二乗
+
+    let p = (x.powi(2) + y.powi(2)).sqrt();
+    let mut theta = (z * A) / (p * (1.0 - E2).sqrt());
+    let sin_theta = theta.sin();
+    let cos_theta = theta.cos();
+
+    // 経度の計算
+    let longitude = y.atan2(x);
+
+    // 高度と緯度の初期推定
+    let mut latitude = (z + E2 * A * sin_theta.powi(3))
+        .atan2(p - E2 * A * cos_theta.powi(3));
+    let mut n = A / (1.0 - E2 * latitude.sin().powi(2)).sqrt();
+    let mut altitude = p / latitude.cos() - n;
+
+    // 反復計算で緯度と高度を収束させる
+    for _ in 0..5 {
+        n = A / (1.0 - E2 * latitude.sin().powi(2)).sqrt();
+        altitude = p / latitude.cos() - n;
+        latitude = (z + E2 * n * latitude.sin()).atan2(p);
     }
-    value
+
+    // 緯度と経度をラジアンから度に変換
+    let latitude = latitude * 180.0 / PI;
+    let longitude = longitude * 180.0 / PI;
+
+    (latitude, longitude, altitude)
+
 }
-fn extract_all_bits(data_bytes: &[u8]) -> HashMap<&'static str, u32> {
-    let mut map = HashMap::new();
-    map.insert("T0E", extract_bits_range(data_bytes, 11, 24));
-    map.insert("M0", extract_bits_range(data_bytes, 25, 56));
-    map.insert("E", extract_bits_range(data_bytes, 57, 88));
-    map.insert("AQRTA", extract_bits_range(data_bytes, 89, 120));
-    map.insert("OMEGA0", extract_bits_range(data_bytes, 131, 162));
-    map.insert("I0", extract_bits_range(data_bytes, 163, 194));
-    map.insert("OMEGA", extract_bits_range(data_bytes, 195, 226));
-    map.insert("IDOT", extract_bits_range(data_bytes, 227, 240));
-    map.insert("OMEGADOT", extract_bits_range(data_bytes, 251, 274));
-    map.insert("DELTAN", extract_bits_range(data_bytes, 275, 290));
-    map.insert("CUC", extract_bits_range(data_bytes, 291, 306));
-    map.insert("CUS", extract_bits_range(data_bytes, 307, 322));
-    map.insert("CRC", extract_bits_range(data_bytes, 323, 338));
-    map.insert("CRS", extract_bits_range(data_bytes, 339, 354));
-    map.insert("CIC", extract_bits_range(data_bytes, 379, 394));
-    map.insert("CIS", extract_bits_range(data_bytes, 395, 410));
-    map.insert("T0C", extract_bits_range(data_bytes, 411, 424));
-    map.insert("AF0", extract_bits_range(data_bytes, 425, 455));
-    map.insert("AF1", extract_bits_range(data_bytes, 456, 476));
-    map.insert("AF2", extract_bits_range(data_bytes, 477, 482));
-    map.insert("AI0", extract_bits_range(data_bytes, 483, 493));
-    map.insert("AI1", extract_bits_range(data_bytes, 494, 504));
-    map.insert("AI2", extract_bits_range(data_bytes, 505, 518));
-    map.insert("REGION1", extract_bits_range(data_bytes, 519, 519));
-    map.insert("REGION2", extract_bits_range(data_bytes, 520, 520));
-    map.insert("REGION3", extract_bits_range(data_bytes, 521, 521));
-    map.insert("REGION4", extract_bits_range(data_bytes, 522, 522));
-    map.insert("REGION5", extract_bits_range(data_bytes, 523, 523));
-    map.insert("BGDA", extract_bits_range(data_bytes, 524, 533));
-    map.insert("BGDB", extract_bits_range(data_bytes, 534, 543));
-    map.insert("E5BHS", extract_bits_range(data_bytes, 544, 545));
-    map.insert("E1BHS", extract_bits_range(data_bytes, 546, 547));
-    map.insert("E5BDVS", extract_bits_range(data_bytes, 548, 548));
-    map.insert("E1BDVS", extract_bits_range(data_bytes, 549, 549));
-    map
-}
+//------------------------------eceftowgs84--------------------------------
 
-fn hashmap_to_string(map: &HashMap<&str, u32>) -> String {
-    map.iter()
-        .map(|(key, value)| format!("{}: {}", key, value))
-        .collect::<Vec<String>>()
-        .join(", ")
-}
-
-/* 
-
-macro_rules! ced_and_status_range {
-    ($($name:ident, $start:expr, $end:expr);* $(;)?) => {
-        $(
-            const $name: (usize, usize) = ($start, $end);
-        )*
-    };
-}
-ced_and_status_range!(
-    T0E, 11, 24;
-    M0, 25, 56;
-    E, 57, 88;
-    AQRTA,89,120;
-
-    OMEGA0,131,162;
-    I0,163,194;
-    OMEGA,195,226;
-    IDOT,227,240;
-
-    OMEGADOT,251,274;
-    DELTAN,275,290;
-    CUC,291,306;
-    CUS,307,322;
-    CRC,323,338;
-    CRS,339,354;
-
-    CIC,379,394;
-    CIS,395,410; 
-    T0C,411,424;
-    AF0,425,455;
-    AF1,456,476;
-    AF2,477,482;
-
-    AI0,483,493;
-    AI1,494,504;
-    AI2,505,518;
-    REGION1,519,519;
-    REGION2,520,520;
-    REGION3,521,521;
-    REGION4,522,522;
-    REGION5,523,523;
-    BGDA,524,533;
-    BGDB,534,543;
-    E5BHS,544,545;
-    E1BHS,546,547;
-    E5BDVS,548,548;
-    E1BDVS,549,549;
-);
-*/
-//---------------------------------------------------------
 fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
@@ -205,6 +134,22 @@ fn main() -> Result<()> {
     let mut last_tow_mod_30 = 0;
 
     while let Some(packet) = read.read_packet()? {
+
+        //for display latitute,longitude,altitude-------------------------------- 
+        if let Some(
+            obpos @ ObserverPosition {
+                x,
+                y,
+                z,
+                ..
+            },
+        ) = &packet.op
+        {
+            let (lat, lon, alt) = ecef_to_wgs84(obpos.x, obpos.y, obpos.z);
+            log::info!("{}:ECEF={:?},緯度(latitude)={},経度(longitude)={},高度(altitude)={}", "ObserverPosition".red(),obpos, lat, lon, alt);
+        } 
+        //--------------------------------------------------------------------------------
+        
         if let Some(
             inav @ GalileoInav {
                 contents: inav_word,
@@ -280,6 +225,7 @@ fn main() -> Result<()> {
                 );
                 continue;
             }
+            //--------------------------------------------------------------------------------
 
             osnma.feed_inav(inav_word[..].try_into().unwrap(), svn, gst, band);
             if let Some(osnma_data) = osnma_data {
@@ -297,18 +243,13 @@ fn main() -> Result<()> {
                         .map(|d| d == data_bytes)
                         .unwrap_or(false)
                     {
-                        //Extract CED and STATUS data from the data bytes----------------
-                        let extracted_bits = extract_all_bits(&data_bytes);
-                        let extracted_bits_str = hashmap_to_string(&extracted_bits);
-                        //-----------------------------------------------------------------
                         
                         log::info!(
                             "new CED and status for {} authenticated \
-                                    (authbits = {}, GST = {:?},data = {{{}}})",
+                                    (authbits = {}, GST = {:?})",
                             svn,
                             data.authbits(),
                             data.gst(),
-                            extracted_bits_str
                         );
                         ced_and_status_data[idx] = Some(data_bytes);
                     }
@@ -327,7 +268,7 @@ fn main() -> Result<()> {
 			    svn,
                             data.authbits(),
                             data.gst()
-			);
+);
                         timing_parameters[idx] = Some(data_bytes);
                     }
                 }
