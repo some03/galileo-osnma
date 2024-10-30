@@ -146,7 +146,7 @@ fn main() -> Result<()> {
         ) = &packet.op
         {
             let (lat, lon, alt) = ecef_to_wgs84(obpos.x, obpos.y, obpos.z);
-            log::info!("{}:ECEF={:?},緯度(latitude)={},経度(longitude)={},高度(altitude)={}", "ObserverPosition".red(),obpos, lat, lon, alt);
+            log::info!("{}:ECEF={:?},緯度(latitude)={},経度(longitude)={},高度(altitude)={}", "ObserverPosition".cyan(),obpos, lat, lon, alt);
         } 
         //--------------------------------------------------------------------------------
         
