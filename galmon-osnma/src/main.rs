@@ -135,7 +135,7 @@ fn main() -> Result<()> {
 
     while let Some(packet) = read.read_packet()? {
 
-        //for display latitute,longitude,altitude-------------------------------- 
+        //display latitute,longitude,altitude-----------------------------------------------------------------------------------------------
         if let Some(
             obpos @ ObserverPosition {
                 x,
@@ -148,7 +148,7 @@ fn main() -> Result<()> {
             let (lat, lon, alt) = ecef_to_wgs84(obpos.x, obpos.y, obpos.z);
             log::info!("{}:ECEF={:?},緯度(latitude)={},経度(longitude)={},高度(altitude)={}", "ObserverPosition".cyan(),obpos, lat, lon, alt);
         } 
-        //--------------------------------------------------------------------------------
+        //-------------------------------------------------------------------------------------------------------------------------------------
         
         if let Some(
             inav @ GalileoInav {
