@@ -7,7 +7,7 @@ use galileo_osnma::{
     Gst, InavBand, Osnma, PublicKey, Svn, Validated, Wn,
 };
 use spki::DecodePublicKey;
-use std::{collections::HashMap, io::Read};
+use std::{io::Read};
 use std::f64::consts::PI;
 use colored::*;
 
@@ -52,7 +52,7 @@ fn  ecef_to_wgs84(x:f64,y:f64,z:f64) -> (f64,f64,f64) {
     const E2: f64 = 0.00669437999014; // 第一離心率の二乗
 
     let p = (x.powi(2) + y.powi(2)).sqrt();
-    let mut theta = (z * A) / (p * (1.0 - E2).sqrt());
+    let theta = (z * A) / (p * (1.0 - E2).sqrt());
     let sin_theta = theta.sin();
     let cos_theta = theta.cos();
 
@@ -138,9 +138,6 @@ fn main() -> Result<()> {
         //display latitute,longitude,altitude-----------------------------------------------------------------------------------------------
         if let Some(
             obpos @ ObserverPosition {
-                x,
-                y,
-                z,
                 ..
             },
         ) = &packet.op
